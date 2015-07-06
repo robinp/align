@@ -11,7 +11,7 @@ build-type:          Simple
 cabal-version:       >=1.10
 source-repository head
   type: git
-  location: http://bitbucket.org/robin_p/align.git
+  location: https://github.com/robinp/align.git
 
 library
   exposed-modules:     Data.Align
