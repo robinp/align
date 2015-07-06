@@ -1,21 +1,31 @@
 {-# LANGUAGE RecordWildCards #-}
+-- | Collection of functions for global, local and multi-sequence alignment.
 module Data.Align
-  ( align
+  (
+  -- * Global and local alignment
+    align
   , AlignConfig
   , alignConfig
   , Step
   , Trace, traceScore, trace
+  -- * Align streams using sliding windows
   , windowedAlign
+  -- * Multi-sequence alignment
+  , centerStar
+  , MultiStep, center, others, stepOfAll
+  , MultiTrace, centerIndex, otherIndices, allIndices, multiTrace
+  -- * Debugging and demonstration
   , debugAlign
+  , debugMultiAlign
   ) where
 
-import Data.Function (fix)
+import Data.Function (fix, on)
 import qualified Data.List as L
+import Data.Maybe (fromMaybe)
 import Data.MemoUgly
 import Data.Ord
 import qualified Data.Vector as V
 import qualified Data.Vector.Generic as G
-import qualified Debug.Trace as D
 
 data AlignConfig a s = AlignConfig
   { acPairScore :: a -> a -> s
@@ -23,11 +33,21 @@ data AlignConfig a s = AlignConfig
   , ac_gap_penalty :: s
   }
 
+-- | Configures the scores used when aligning.
+-- The gap scores should be negative in order to be penalties.
 alignConfig :: (a -> a -> s)  -- ^ Scoring function.
-            -> s              -- ^ Initial gap penalty.
-            -> s              -- ^ Gap penalty.
+            -> s              -- ^ Initial gap score.
+            -> s              -- ^ Gap score.
             -> AlignConfig a s
 alignConfig = AlignConfig
+
+-- | Configuration for local alignment.
+localAlignConfig
+  :: Num s
+  => (a -> a -> s)  -- ^ Scoring function.
+  -> s              -- ^ Gap score.
+  -> AlignConfig a s
+localAlignConfig f = alignConfig f 0
 
 -- | Either an unmatched item or a match.
 type Step a = Either (Either a a) (a, a)
@@ -84,19 +104,19 @@ debugAlign = go [] []
 -- 1.25
 -- doppl-e-
 -- -applied
-align :: (G.Vector v a, Num s, Eq s, Ord s)
+align :: (G.Vector v a, Num s, Ord s)
   => AlignConfig a s
   -> v a  -- ^ Left sequence.
   -> v a  -- ^ Right sequence.
   -> Trace a s
-align (AlignConfig {..}) as bs =
+align AlignConfig{..} as bs =
   revTrace . fix (memo . go) $ (lastIndex as, lastIndex bs)
   where
   revTrace (Trace s t) = Trace s (reverse t)
   lastIndex v = G.length v - 1
   --
   go k (i,j)
-    | i == (-1) || j == (-1) = 
+    | i == (-1) || j == (-1) =
       if i == j then Trace 0 []
       else if i == (-1)
            then skipInit j stepRight bs
@@ -116,7 +136,7 @@ align (AlignConfig {..}) as bs =
 
 -- | Aligns long streams by performing alignment on windowed sections.
 windowedAlign :: (Num s, Eq s, Ord s)
-  => AlignConfig a s 
+  => AlignConfig a s
   -> Int  -- ^ Window size.
   -> [a]  -- ^ Left stream.
   -> [a]  -- ^ Right stream.
@@ -149,3 +169,100 @@ windowedAlign cfg w as bs = go as bs []
     reverse . dropWhile (not . isMatch) . reverse
   --
   countMatchOr f = length . filter (\s -> isMatch s || f s)
+
+-- | A step in a multi-sequence alignment.
+data MultiStep a = MultiStep
+  { center :: Maybe a    -- ^ 'Nothing' means gap insertion.
+  , others :: [Maybe a]  -- ^ Parallel to 'otherIndices'.
+  }
+
+-- | The result of a multi-sequence alignment.
+data MultiTrace i a s = MultiTrace
+  { centerIndex :: i
+  , otherIndices :: [i]
+  , multiTrace :: [MultiStep a]
+  }
+
+-- | The center step followed by other steps.
+stepOfAll :: MultiStep a -> [Maybe a]
+stepOfAll MultiStep{..} = center:others
+
+-- | The center index followed by other indices.
+allIndices :: MultiTrace i a s -> [i]
+allIndices MultiTrace{..} = centerIndex:otherIndices
+
+-- | Renders a char-based multi-alignment result to a string.
+debugMultiAlign :: [MultiStep Char] -> String
+debugMultiAlign =
+  unlines . map (map charOrDash) . L.transpose . map stepOfAll
+  where
+  charOrDash = fromMaybe '-'
+
+-- | Align multiple sequences using the Center Star heuristic method by
+-- Chin, Ho, Lam, Wong and Chan (2003).
+-- <http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.90.7448&rep=rep1&type=pdf>. 
+-- Assumes the list of sequences to be non-empty, and the indices to be unique.
+centerStar :: (G.Vector v a, Num s, Ord s, Ord i)
+  => AlignConfig a s
+  -> [(i, v a)]  -- TODO use internal indices rather to make uniqueness sure
+  -> MultiTrace i a s
+centerStar conf vs =
+  let (firstPair:rest) = centerPairs
+      initialTrace = MultiTrace
+        { centerIndex = fst . fst $ firstPair
+        , otherIndices = [snd . fst $ firstPair]
+        , multiTrace = initialSteps . trace . snd $ firstPair
+        }
+  in foldl mergePair initialTrace rest
+  where
+  initialSteps = go []
+    where
+    go acc [] = reverse acc
+    go acc (s:xs) = go (conv s []:acc) xs
+  --
+  conv s rest = case s of 
+      Right (c, d) -> MultiStep (Just c) (Just d:rest)
+      Left (Left c) -> MultiStep (Just c) (Nothing:rest)
+      Left (Right d) -> MultiStep Nothing (Just d:rest)
+  --
+  mergePair MultiTrace{..} ((_,j), tr) = MultiTrace
+    { centerIndex = centerIndex
+    , otherIndices = j:otherIndices
+    , multiTrace = mergeSteps multiTrace (trace tr)
+    }
+    where
+    mergeSteps mss = go [] mss
+      where
+      noOthers = map (const Nothing) . others . head $ mss
+      --
+      go acc [] [] = reverse acc
+      go acc (MultiStep{..}:mss) [] =
+        go (MultiStep center (Nothing:others):acc) mss []
+      go acc [] (s:ss) = go (conv s noOthers:acc) [] ss
+      go acc (m@MultiStep{..}:mss) (s:ss) = case (center, s) of
+        (Nothing, Left (Right d)) ->
+          go (MultiStep center (Just d:others):acc) mss ss
+        (Nothing, _) ->
+          go (MultiStep center (Nothing:others):acc) mss (s:ss)
+        (Just _, Right (_, d)) ->
+          go (MultiStep center (Just d:others):acc) mss ss
+        (Just _, Left (Left _)) ->
+          go (MultiStep center (Nothing:others):acc) mss ss
+        (Just _, Left (Right d)) ->
+          go (MultiStep Nothing (Just d:noOthers):acc) (m:mss) ss
+  --
+  centerPairs
+    = snd  -- drop cache
+    . L.maximumBy (comparing fst)
+    . map (\g -> (starSum g, g))  -- cache scores
+    . L.groupBy ((==) `on` (fst . fst))
+    . L.sortBy (comparing fst)
+    $ pairAligns
+    where
+    pairAligns = do
+      ((i,v):rest) <- L.tails vs
+      (j,w) <- rest
+      let tr = align conf v w
+      [((i,j), tr), ((j,i), tr)]
+    --
+    starSum = sum . map (traceScore . snd)
