@@ -1,5 +1,5 @@
 name:                align
-version:             0.1.1.0
+version:             0.1.1.1
 synopsis:            Sequence alignment algorithms.
 description:         Global or local sequence alignment, not exclusively for text.
 license:             BSD3

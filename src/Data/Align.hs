@@ -220,7 +220,7 @@ centerStar conf vs =
     go acc [] = reverse acc
     go acc (s:xs) = go (conv s []:acc) xs
   --
-  conv s rest = case s of 
+  conv s rest = case s of
       Right (c, d) -> MultiStep (Just c) (Just d:rest)
       Left (Left c) -> MultiStep (Just c) (Nothing:rest)
       Left (Right d) -> MultiStep Nothing (Just d:rest)
@@ -263,6 +263,12 @@ centerStar conf vs =
       ((i,v):rest) <- L.tails vs
       (j,w) <- rest
       let tr = align conf v w
-      [((i,j), tr), ((j,i), tr)]
+      [((i,j), tr), ((j,i), flipLR tr)]
+      where
+        flipLR tr = tr { trace = map go . trace $ tr }
+          where
+            go (Left (Left a)) = Left (Right a)
+            go (Left (Right a)) = Left (Left a)
+            go (Right (c,d)) = Right (d,c)
     --
     starSum = sum . map (traceScore . snd)
