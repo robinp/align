@@ -19,10 +19,11 @@ module Data.Align
   , debugMultiAlign
   ) where
 
+import Control.Monad.Trans.State.Strict
 import Data.Function (fix, on)
 import qualified Data.List as L
+import qualified Data.Map.Strict as M
 import Data.Maybe (fromMaybe)
-import Data.MemoUgly
 import Data.Ord
 import qualified Data.Vector as V
 import qualified Data.Vector.Generic as G
@@ -77,7 +78,8 @@ data Trace a s = Trace
 instance (Show a, Show s) => Show (Trace a s) where
   show (Trace s t) = "Trace(score = " ++ show s ++ ", steps = " ++ show t ++ ")"
 
-(Trace s ts) `tappend` (Trace z (t:_)) = Trace (s+z) (t:ts)
+mt `tappend` (Trace z (t:_)) =
+    fmap (\(Trace s ts) -> Trace (s+z) (t:ts)) mt
 
 -- | Utility for displaying a Char-based alignment.
 debugAlign :: [Step Char] -> String
@@ -110,24 +112,34 @@ align :: (G.Vector v a, Num s, Ord s)
   -> v a  -- ^ Right sequence.
   -> Trace a s
 align AlignConfig{..} as bs =
-  revTrace . fix (memo . go) $ (lastIndex as, lastIndex bs)
+  let p = (lastIndex as, lastIndex bs)
+  in revTrace $ evalState (go p) M.empty
   where
   revTrace (Trace s t) = Trace s (reverse t)
   lastIndex v = G.length v - 1
   --
-  go k (i,j)
-    | i == (-1) || j == (-1) =
+  go p = do
+    res <- gets $ M.lookup p
+    case res of
+        Just r -> return r
+        Nothing -> do
+            newRes <- pgo p
+            modify (M.insert p newRes)
+            return newRes
+  --
+  pgo (i,j)
+    | i == (-1) || j == (-1) = return $
       if i == j then Trace 0 []
       else if i == (-1)
            then skipInit j stepRight bs
            else skipInit i stepLeft as
-    | otherwise =
+    | otherwise = do
       let a = as G.! i
           b = bs G.! j
-          diag  = k (i-1,j-1) `tappend` Trace (acPairScore a b) [stepBoth a b]
-          a_gap = k (i-1,  j) `tappend` Trace ac_gap_penalty [stepLeft a]
-          b_gap = k (  i,j-1) `tappend` Trace ac_gap_penalty [stepRight b]
-      in L.maximumBy (comparing traceScore) [diag, a_gap, b_gap]
+      diag  <- go (i-1,j-1) `tappend` Trace (acPairScore a b) [stepBoth a b]
+      a_gap <- go (i-1,  j) `tappend` Trace ac_gap_penalty [stepLeft a]
+      b_gap <- go (  i,j-1) `tappend` Trace ac_gap_penalty [stepRight b]
+      return $ L.maximumBy (comparing traceScore) [diag, a_gap, b_gap]
   --
   skipInit idx stepFun xs =
     let score = ac_initial_gap_penalty * fromIntegral (idx+1)

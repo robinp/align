@@ -1,5 +1,5 @@
 name:                align
-version:             0.1.1.1
+version:             0.1.1.2
 synopsis:            Sequence alignment algorithms.
 description:         Global or local sequence alignment, not exclusively for text.
 license:             BSD3
@@ -17,7 +17,8 @@ library
   exposed-modules:     Data.Align,
                        Data.Align.Demo
   build-depends:       base >=4.6 && <5,
-                       uglymemo >= 0.1,
+                       containers,
+                       transformers,
                        vector >=0.10
   hs-source-dirs:      src
   default-language:    Haskell98
