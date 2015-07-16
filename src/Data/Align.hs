@@ -213,7 +213,7 @@ debugMultiAlign =
 -- | Align multiple sequences using the Center Star heuristic method by
 -- Chin, Ho, Lam, Wong and Chan (2003).
 -- <http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.90.7448&rep=rep1&type=pdf>. 
--- Assumes the list of sequences to be non-empty, and the indices to be unique.
+-- Assumes the list of sequences to have length > 1, and the indices to be unique.
 centerStar :: (G.Vector v a, Num s, Ord s, Ord i)
   => AlignConfig a s
   -> [(i, v a)]  -- TODO use internal indices rather to make uniqueness sure
