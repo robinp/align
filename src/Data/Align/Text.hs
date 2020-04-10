@@ -8,11 +8,8 @@ module Data.Align.Text (
 import qualified Data.List as L (maximumBy)
 import Data.Ord (comparing)
 
--- containers
 import qualified Data.Map as M
--- text
 import qualified Data.Text as T (Text, length, index)
--- transformers
 import Control.Monad.Trans.State.Strict
 
 

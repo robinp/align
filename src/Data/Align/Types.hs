@@ -1,4 +1,13 @@
-module Data.Align.Types where
+module Data.Align.Types (
+    AlignConfig(..)
+  , alignConfig
+  , localAlignConfig
+  , Step
+  , stepLeft, stepRight, stepBoth
+  , isMatch, isLeft, isRight
+  , Trace(..)
+  , tappend
+                        ) where
 
 
 data AlignConfig a s = AlignConfig
@@ -7,20 +16,13 @@ data AlignConfig a s = AlignConfig
   , ac_gap_penalty :: s
   }
 
-eqAlignConfig :: Eq a =>
-                 s -- ^ match score
-              -> s -- ^ mismatch score
-              -> s -- ^ initial gap penalty
-              -> s -- ^ gap penalty
-              -> AlignConfig a s
-eqAlignConfig ms mms =
-  alignConfig (\a b -> if a == b then ms else mms)
 
 -- | Configures the scores used when aligning.
+-- 
 -- The gap scores should be negative in order to be penalties.
-alignConfig :: (a -> a -> s)  -- ^ Scoring function.
-            -> s              -- ^ Initial gap score.
-            -> s              -- ^ Gap score.
+alignConfig :: (a -> a -> s)  -- ^ Scoring function
+            -> s              -- ^ Initial gap score
+            -> s              -- ^ Gap score
             -> AlignConfig a s
 alignConfig = AlignConfig
 
