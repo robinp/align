@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
 -- | Collection of functions for global, local and multi-sequence alignment.
 module Data.Align
   (
@@ -20,7 +21,7 @@ module Data.Align
   ) where
 
 import Control.Monad.Trans.State.Strict
-import Data.Function (fix, on)
+import Data.Function (on)
 import qualified Data.List as L
 import qualified Data.Map.Strict as M
 import Data.Maybe (fromMaybe)
@@ -28,58 +29,8 @@ import Data.Ord
 import qualified Data.Vector as V
 import qualified Data.Vector.Generic as G
 
-data AlignConfig a s = AlignConfig
-  { acPairScore :: a -> a -> s
-  , ac_initial_gap_penalty :: s
-  , ac_gap_penalty :: s
-  }
+import Data.Align.Types
 
--- | Configures the scores used when aligning.
--- The gap scores should be negative in order to be penalties.
-alignConfig :: (a -> a -> s)  -- ^ Scoring function.
-            -> s              -- ^ Initial gap score.
-            -> s              -- ^ Gap score.
-            -> AlignConfig a s
-alignConfig = AlignConfig
-
--- | Configuration for local alignment.
-localAlignConfig
-  :: Num s
-  => (a -> a -> s)  -- ^ Scoring function.
-  -> s              -- ^ Gap score.
-  -> AlignConfig a s
-localAlignConfig f = alignConfig f 0
-
--- | Either an unmatched item or a match.
-type Step a = Either (Either a a) (a, a)
-
-stepLeft = Left . Left
-stepRight = Left . Right
-stepBoth a b = Right (a,b)
-
-isMatch :: Step a -> Bool
-isMatch (Right _) = True
-isMatch _ = False
-
-isLeft :: Step a -> Bool
-isLeft (Left (Left _)) = True
-isLeft _ = False
-
-isRight :: Step a -> Bool
-isRight (Left (Right _)) = True
-isRight _ = False
-
--- | The result of the alignment.
-data Trace a s = Trace
-  { traceScore :: s
-  , trace :: [Step a]
-  }
-
-instance (Show a, Show s) => Show (Trace a s) where
-  show (Trace s t) = "Trace(score = " ++ show s ++ ", steps = " ++ show t ++ ")"
-
-mt `tappend` (Trace z (t:_)) =
-    fmap (\(Trace s ts) -> Trace (s+z) (t:ts)) mt
 
 -- | Utility for displaying a Char-based alignment.
 debugAlign :: [Step Char] -> String
@@ -108,18 +59,17 @@ debugAlign = go [] []
 -- -applied
 align :: (G.Vector v a, Num s, Ord s)
   => AlignConfig a s
-  -> v a  -- ^ Left sequence.
-  -> v a  -- ^ Right sequence.
+  -> v a  -- ^ Left sequence
+  -> v a  -- ^ Right sequence
   -> Trace a s
-align AlignConfig{..} as bs =
-  let p = (lastIndex as, lastIndex bs)
-  in revTrace $ evalState (go p) M.empty
+align AlignConfig{..} as bs = revTrace $ evalState (go p) M.empty
   where
+  p = (lastIndex as, lastIndex bs)
   revTrace (Trace s t) = Trace s (reverse t)
   lastIndex v = G.length v - 1
   --
   go p = do
-    res <- gets $ M.lookup p
+    res <- gets (M.lookup p)
     case res of
         Just r -> return r
         Nothing -> do
